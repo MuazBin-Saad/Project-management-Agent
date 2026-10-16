@@ -8,8 +8,11 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
-TOKEN = os.getenv("GITHUB_TOKEN")
+ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(ROOT / ".env", override=True)
+TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
+if not TOKEN:
+    raise SystemExit("GITHUB_TOKEN not found in .env")
 URL = "https://api.github.com/graphql"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -67,6 +70,8 @@ def run_query(query, variables, retries=5):
                 print("GraphQL errors:", body["errors"])
             else:
                 print(f"HTTP {r.status_code}: {r.text[:200]}")
+                if r.status_code == 401:
+                    raise SystemExit("401: token rejected, check .env")
         except requests.RequestException as e:
             print("Request failed:", e)
         wait = 2 ** attempt * 5
