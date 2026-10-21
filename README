@@ -1,0 +1,8 @@
+git clone <https://github.com/MuazBin-Saad/Project-management-Agent>
+cd <Project-management-Agent>
+docker compose up --build
+# open http://localhost:8501
+
+chat panel needs an LLM key in .env
+
+Without Docker (venv, pip install -r requirements.txt, run the loader, run Streamlit)

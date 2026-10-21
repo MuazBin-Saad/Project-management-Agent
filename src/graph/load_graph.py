@@ -9,6 +9,7 @@ from neo4j import GraphDatabase
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env", override=True)
 PASSWORD = os.getenv("NEO4J_PASSWORD", "").strip()
+URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 
 BOTS = {"dependabot", "dependabot-preview", "pre-commit-ci"}
 CLOSING = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)", re.I)
@@ -99,7 +100,7 @@ def batched(session, query, rows, size=500):
 
 def main(repo_dir):
     issues, prs, commits, fixes, mentions, refs = build(repo_dir)
-    driver = GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", PASSWORD))
+    driver = GraphDatabase.driver(URI, auth=("neo4j", PASSWORD))
     with driver.session() as s:
         for q in [
             "CREATE CONSTRAINT issue_num IF NOT EXISTS FOR (n:Issue) REQUIRE n.number IS UNIQUE",

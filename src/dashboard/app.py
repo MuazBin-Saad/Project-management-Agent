@@ -11,13 +11,15 @@ from pyvis.network import Network
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env", override=True)
 
+URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+
 st.set_page_config(page_title="Project Insight", layout="wide")
 
 
 @st.cache_resource
 def driver():
     pw = os.getenv("NEO4J_PASSWORD", "").strip()
-    return GraphDatabase.driver("bolt://localhost:7687", auth=("neo4j", pw))
+    return GraphDatabase.driver(URI, auth=("neo4j", pw))
 
 
 def q(cypher, **params):
