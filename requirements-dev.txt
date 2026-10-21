@@ -1,2 +1,4 @@
-Jupyter
-PyDriller
+-r requirements.txt
+pydriller
+jupyter
+ipykernel
