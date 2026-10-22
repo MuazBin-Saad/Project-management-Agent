@@ -34,7 +34,7 @@ ISSUE_FIELDS = """
 number title body state stateReason createdAt updatedAt closedAt
 author { login }
 labels(first:10) { nodes { name } }
-comments { totalCount }
+comments(first:5) { totalCount nodes { createdAt author { login } } }
 """
 
 PR_FIELDS = """
@@ -42,6 +42,8 @@ number title body state createdAt updatedAt closedAt mergedAt
 author { login }
 labels(first:10) { nodes { name } }
 closingIssuesReferences(first:10) { nodes { number } }
+additions deletions changedFiles
+reviews(first:20) { totalCount nodes { author { login } submittedAt state } }
 commits(first:100) {
   totalCount
   nodes { commit { oid messageHeadline authoredDate author { user { login } } } }
