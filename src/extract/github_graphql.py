@@ -1,3 +1,8 @@
+"""Stage 1a: GitHub GraphQL extractor (extended with PR size, reviews, issue comment timing).
+
+Usage:  python src/extract/github_graphql.py pallets/flask [--max-pages N]
+Delete data/raw/<owner>__<name> first if you want a fresh pull with new fields.
+"""
 import argparse
 import json
 import os
@@ -39,10 +44,10 @@ comments(first:5) { totalCount nodes { createdAt author { login } } }
 
 PR_FIELDS = """
 number title body state createdAt updatedAt closedAt mergedAt
+additions deletions changedFiles
 author { login }
 labels(first:10) { nodes { name } }
 closingIssuesReferences(first:10) { nodes { number } }
-additions deletions changedFiles
 reviews(first:20) { totalCount nodes { author { login } submittedAt state } }
 commits(first:100) {
   totalCount
@@ -52,7 +57,7 @@ commits(first:100) {
 
 CONFIG = {
     "issues": (ISSUE_FIELDS, 100),
-    "pullRequests": (PR_FIELDS, 30),  # smaller pages: nested commits cost more
+    "pullRequests": (PR_FIELDS, 30),  # lower to 20 if you hit cost/502 errors
 }
 
 
@@ -97,7 +102,7 @@ def fetch_all(owner, name, kind, max_pages=None):
         .replace("__SIZE__", str(size))
         .replace("__FIELDS__", fields)
     )
-    out_dir = Path("data/raw") / f"{owner}__{name}" / kind
+    out_dir = ROOT / "data" / "raw" / f"{owner}__{name}" / kind
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Resume from the last saved page, if any

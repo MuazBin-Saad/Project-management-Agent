@@ -4,3 +4,9 @@ neo4j
 streamlit
 pandas
 pyvis
+scikit-learn
+langchain
+langgraph
+langchain-google-genai
+langchain-anthropic
+langchain-openai

@@ -1,3 +1,4 @@
+"""Stage 1b: load the cached GitHub JSON into Neo4j (extended with PR size, reviews, first response)."""
 import json
 import os
 import re
@@ -27,6 +28,16 @@ def login(node):
     return (node or {}).get("login")
 
 
+def first_response(issue):
+    """Timestamp of the first comment by someone other than the issue author."""
+    author = login(issue["author"])
+    for c in issue["comments"]["nodes"]:
+        who = login(c["author"])
+        if who and who != author:
+            return c["createdAt"]
+    return None
+
+
 def build(repo_dir):
     issues = load(repo_dir, "issues")
     prs = load(repo_dir, "pullRequests")
@@ -39,10 +50,11 @@ def build(repo_dir):
         "createdAt": i["createdAt"], "closedAt": i["closedAt"],
         "labels": [l["name"] for l in i["labels"]["nodes"]],
         "commentCount": i["comments"]["totalCount"],
+        "firstResponse": first_response(i),
         "author": login(i["author"]),
     } for i in issues]
 
-    pr_rows, commit_rows, seen_commits = [], [], set()
+    pr_rows, commit_rows, review_rows, seen_commits = [], [], [], set()
     fixes, mentions, refs = {}, set(), set()
 
     for p in prs:
@@ -51,6 +63,8 @@ def build(repo_dir):
             "number": p["number"], "title": p["title"], "body": p["body"] or "",
             "state": p["state"], "createdAt": p["createdAt"],
             "closedAt": p["closedAt"], "mergedAt": p["mergedAt"],
+            "additions": p["additions"], "deletions": p["deletions"],
+            "changedFiles": p["changedFiles"],
             "labels": [l["name"] for l in p["labels"]["nodes"]],
             "author": author,
         })
@@ -66,6 +80,15 @@ def build(repo_dir):
                 "author": login((c["author"] or {}).get("user")),
                 "pr": p["number"],
             })
+
+        for rv in p["reviews"]["nodes"]:
+            rl = login(rv["author"])
+            if rl and rv["submittedAt"]:
+                review_rows.append({
+                    "pr": p["number"], "reviewer": rl, "at": rv["submittedAt"],
+                    "state": rv["state"],
+                    "key": f'{p["number"]}-{rl}-{rv["submittedAt"]}',
+                })
 
         # official links (any author)
         for n in p["closingIssuesReferences"]["nodes"]:
@@ -87,7 +110,7 @@ def build(repo_dir):
             elif n in pr_nums:
                 refs.add((p["number"], n))
 
-    return (issue_rows, pr_rows, commit_rows,
+    return (issue_rows, pr_rows, commit_rows, review_rows,
             [{"pr": a, "issue": b, "source": s} for (a, b), s in fixes.items()],
             [{"pr": a, "issue": b} for a, b in mentions],
             [{"pr": a, "other": b} for a, b in refs])
@@ -99,7 +122,7 @@ def batched(session, query, rows, size=500):
 
 
 def main(repo_dir):
-    issues, prs, commits, fixes, mentions, refs = build(repo_dir)
+    issues, prs, commits, reviews, fixes, mentions, refs = build(repo_dir)
     driver = GraphDatabase.driver(URI, auth=("neo4j", PASSWORD))
     with driver.session() as s:
         for q in [
@@ -116,6 +139,7 @@ def main(repo_dir):
             SET i.title = r.title, i.body = r.body, i.state = r.state,
                 i.stateReason = r.stateReason, i.labels = r.labels,
                 i.commentCount = r.commentCount,
+                i.firstResponseAt = datetime(r.firstResponse),
                 i.createdAt = datetime(r.createdAt), i.closedAt = datetime(r.closedAt)
             WITH i, r WHERE r.author IS NOT NULL
             MERGE (d:Developer {login: r.author})
@@ -126,6 +150,8 @@ def main(repo_dir):
             MERGE (p:PullRequest {number: r.number})
             SET p.title = r.title, p.body = r.body, p.state = r.state,
                 p.labels = r.labels, p.createdAt = datetime(r.createdAt),
+                p.additions = r.additions, p.deletions = r.deletions,
+                p.changedFiles = r.changedFiles,
                 p.closedAt = datetime(r.closedAt), p.mergedAt = datetime(r.mergedAt)
             WITH p, r WHERE r.author IS NOT NULL
             MERGE (d:Developer {login: r.author})
@@ -140,6 +166,13 @@ def main(repo_dir):
             WITH c, r WHERE r.author IS NOT NULL
             MERGE (d:Developer {login: r.author})
             MERGE (d)-[:AUTHORED]->(c)""", commits)
+
+        batched(s, """
+            UNWIND $rows AS r
+            MATCH (p:PullRequest {number: r.pr})
+            MERGE (d:Developer {login: r.reviewer})
+            MERGE (d)-[v:REVIEWED {key: r.key}]->(p)
+            SET v.state = r.state, v.at = datetime(r.at)""", reviews)
 
         batched(s, """
             UNWIND $rows AS r
